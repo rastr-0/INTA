@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Network Health Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <span class="topbar__title">Network Health Dashboard</span>
+    <button class="btn btn--primary" id="addHostBtn">+ Add Host</button>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <ul class="host-list" id="hostList">
+        <!-- populated by app.js -->
+      </ul>
+    </aside>
+
+    <main class="main-panel" id="mainPanel">
+      <div class="empty-state" id="emptyState">
+        <p>No host selected. Add a host or click one in the sidebar.</p>
+      </div>
+      <!-- host detail view injected here by app.js -->
+    </main>
+  </div>
+
+  <!-- Add Host Modal -->
+  <dialog class="modal" id="addHostModal">
+    <form method="dialog" class="modal__form" id="addHostForm">
+      <h2>Add Host</h2>
+      <label>
+        Address (IP or hostname) *
+        <input type="text" id="hostAddress" required placeholder="e.g. 8.8.8.8 or example.com" />
+      </label>
+      <label>
+        Label (optional)
+        <input type="text" id="hostLabel" placeholder="e.g. Google DNS" />
+      </label>
+      <div class="modal__actions">
+        <button type="button" class="btn" id="cancelModalBtn">Cancel</button>
+        <button type="submit" class="btn btn--primary">Add</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
