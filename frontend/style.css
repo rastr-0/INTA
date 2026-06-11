@@ -266,6 +266,115 @@ body {
 .trace-table th { color: var(--text-muted); font-weight: 500; }
 .trace-table tr:last-child td { border-bottom: none; }
 
+/* ── Overview ────────────────────────────────────────────────────────────────── */
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+}
+
+.host-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.host-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+  background: rgba(255,255,255,0.02);
+}
+
+.host-panel__left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.host-panel__right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.host-panel__toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.host-panel__toggle:hover { color: var(--text); }
+
+.host-panel__name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.host-panel__addr {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.host-panel__body {
+  padding: 0.75rem 1rem 0.85rem;
+}
+
+.host-panel__body--collapsed { display: none; }
+
+/* ── Compact chart ───────────────────────────────────────────────────────────── */
+.chart-wrap--sm { height: 120px; position: relative; }
+
+/* ── Panel stats row ─────────────────────────────────────────────────────────── */
+.panel-stats {
+  display: flex;
+  gap: 2rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.panel-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+
+/* ── Latency badge ───────────────────────────────────────────────────────────── */
+.latency-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+  background: var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.latency-badge--up      { background: rgba(34,197,94,0.15);  color: var(--green); }
+.latency-badge--down    { background: rgba(239,68,68,0.15);  color: var(--red); }
+.latency-badge--timeout { background: rgba(234,179,8,0.15);  color: var(--yellow); }
+
+/* ── Detail nav ──────────────────────────────────────────────────────────────── */
+.detail-nav { margin-bottom: 0.75rem; }
+
 /* ── Responsive ──────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .layout { flex-direction: column; }

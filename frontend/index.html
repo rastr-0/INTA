@@ -15,20 +15,11 @@
 
   <div class="layout">
     <aside class="sidebar">
-      <ul class="host-list" id="hostList">
-        <!-- populated by app.js -->
-      </ul>
+      <ul class="host-list" id="hostList"></ul>
     </aside>
-
-    <main class="main-panel" id="mainPanel">
-      <div class="empty-state" id="emptyState">
-        <p>No host selected. Add a host or click one in the sidebar.</p>
-      </div>
-      <!-- host detail view injected here by app.js -->
-    </main>
+    <main class="main-panel" id="mainPanel"></main>
   </div>
 
-  <!-- Add Host Modal -->
   <dialog class="modal" id="addHostModal">
     <form method="dialog" class="modal__form" id="addHostForm">
       <h2>Add Host</h2>

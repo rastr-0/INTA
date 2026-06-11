@@ -2,17 +2,25 @@ const API = "http://localhost:8765";
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let hosts = [];
+let viewMode = 'overview'; // 'overview' | 'detail'
 let selectedHostId = null;
-let latencyChart = null;
+let detailChart = null;
+let hostCharts = {};
+let refreshTimer = null;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const hostList       = document.getElementById("hostList");
 const mainPanel      = document.getElementById("mainPanel");
-const emptyState     = document.getElementById("emptyState");
 const addHostBtn     = document.getElementById("addHostBtn");
 const addHostModal   = document.getElementById("addHostModal");
 const addHostForm    = document.getElementById("addHostForm");
 const cancelModalBtn = document.getElementById("cancelModalBtn");
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+}
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 addHostBtn.addEventListener("click", () => addHostModal.showModal());
@@ -46,22 +54,28 @@ addHostForm.addEventListener("submit", async (e) => {
   }
 });
 
-// ── Sidebar ───────────────────────────────────────────────────────────────────
+// ── Hosts ─────────────────────────────────────────────────────────────────────
 async function loadHosts() {
   try {
     const res = await fetch(`${API}/hosts`);
     hosts = await res.json();
     renderSidebar();
+    if (viewMode === 'overview') {
+      renderOverview();
+    } else if (viewMode === 'detail' && selectedHostId) {
+      selectHost(selectedHostId);
+    }
   } catch {
     // backend not reachable yet
   }
 }
 
+// ── Sidebar ───────────────────────────────────────────────────────────────────
 function renderSidebar() {
   hostList.innerHTML = "";
   for (const host of hosts) {
     const li = document.createElement("li");
-    li.className = "host-item" + (host.id === selectedHostId ? " host-item--active" : "");
+    li.className = "host-item" + (viewMode === 'detail' && host.id === selectedHostId ? " host-item--active" : "");
     li.dataset.id = host.id;
 
     const dot = document.createElement("span");
@@ -72,21 +86,216 @@ function renderSidebar() {
     name.textContent = host.label || host.address;
 
     li.append(dot, name);
-    li.addEventListener("click", () => selectHost(host.id));
+    li.addEventListener("click", () => {
+      if (viewMode === 'overview') {
+        const panel = document.getElementById(`panel-${host.id}`);
+        if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        selectHost(host.id);
+      }
+    });
     hostList.appendChild(li);
   }
 }
 
-// ── Detail panel ──────────────────────────────────────────────────────────────
+function updateSidebarDot(hostId, status) {
+  const item = hostList.querySelector(`[data-id="${hostId}"]`);
+  const dot = item?.querySelector('.status-dot');
+  if (dot) dot.className = `status-dot status-dot--${status}`;
+}
+
+// ── Overview ──────────────────────────────────────────────────────────────────
+function renderOverview() {
+  viewMode = 'overview';
+  selectedHostId = null;
+  stopRefresh();
+  destroyDetailChart();
+  destroyHostCharts();
+  renderSidebar();
+
+  mainPanel.innerHTML = '';
+
+  if (!hosts.length) {
+    mainPanel.innerHTML = '<p class="empty-state">No hosts added yet. Click "+ Add Host" to get started.</p>';
+    return;
+  }
+
+  const overview = document.createElement('div');
+  overview.className = 'overview';
+
+  for (const host of hosts) {
+    overview.appendChild(buildHostPanel(host));
+  }
+
+  mainPanel.appendChild(overview);
+
+  // Load data for all panels concurrently
+  hosts.forEach(h => loadPanelData(h.id));
+
+  // Auto-refresh every 30s
+  refreshTimer = setInterval(() => hosts.forEach(h => loadPanelData(h.id)), 30000);
+}
+
+function buildHostPanel(host) {
+  const panel = document.createElement('div');
+  panel.className = 'host-panel';
+  panel.id = `panel-${host.id}`;
+
+  panel.innerHTML = `
+    <div class="host-panel__header">
+      <div class="host-panel__left">
+        <button class="host-panel__toggle" title="Collapse section">▾</button>
+        <span class="status-dot status-dot--${escapeHtml(host._status ?? '')}"></span>
+        <span class="host-panel__name">${escapeHtml(host.label || host.address)}</span>
+        ${host.label ? `<span class="host-panel__addr">${escapeHtml(host.address)}</span>` : ''}
+      </div>
+      <div class="host-panel__right">
+        <span class="latency-badge" id="badge-${host.id}">—</span>
+        <button class="btn btn--sm" id="panelPing-${host.id}">Ping</button>
+        <button class="btn btn--sm btn--primary" id="panelDetail-${host.id}">Detail ›</button>
+      </div>
+    </div>
+    <div class="host-panel__body" id="body-${host.id}">
+      <div class="chart-wrap chart-wrap--sm"><canvas id="chart-${host.id}"></canvas></div>
+      <div class="panel-stats">
+        <div class="panel-stat"><span class="stat-label">Loss</span><span id="ploss-${host.id}">—</span></div>
+        <div class="panel-stat"><span class="stat-label">Status</span><span id="pstatus-${host.id}">—</span></div>
+        <div class="panel-stat"><span class="stat-label">Updated</span><span class="muted" id="pupdated-${host.id}">—</span></div>
+      </div>
+    </div>
+  `;
+
+  panel.querySelector('.host-panel__toggle').addEventListener('click', () => {
+    const body = document.getElementById(`body-${host.id}`);
+    const btn = panel.querySelector('.host-panel__toggle');
+    const collapsed = body.classList.toggle('host-panel__body--collapsed');
+    btn.textContent = collapsed ? '▸' : '▾';
+  });
+
+  panel.querySelector(`#panelPing-${host.id}`).addEventListener('click', () => pingInPanel(host.id));
+  panel.querySelector(`#panelDetail-${host.id}`).addEventListener('click', () => openDetail(host.id));
+
+  return panel;
+}
+
+async function loadPanelData(hostId) {
+  const measurements = await fetch(`${API}/hosts/${hostId}/measurements`)
+    .then(r => r.json()).catch(() => []);
+  applyPanelData(hostId, measurements);
+}
+
+function applyPanelData(hostId, measurements) {
+  if (!document.getElementById(`panel-${hostId}`)) return;
+
+  if (measurements.length) {
+    const m = measurements[0];
+
+    const badge = document.getElementById(`badge-${hostId}`);
+    if (badge) {
+      badge.textContent = m.latency_ms != null ? `${m.latency_ms.toFixed(1)} ms` : '—';
+      badge.className = `latency-badge latency-badge--${m.status}`;
+    }
+
+    const lossEl = document.getElementById(`ploss-${hostId}`);
+    if (lossEl) lossEl.textContent = `${m.packet_loss}%`;
+
+    const statusEl = document.getElementById(`pstatus-${hostId}`);
+    if (statusEl) { statusEl.textContent = m.status; statusEl.className = `stat-value--${m.status}`; }
+
+    const updatedEl = document.getElementById(`pupdated-${hostId}`);
+    if (updatedEl) {
+      updatedEl.textContent = new Date(m.timestamp + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    const dot = document.querySelector(`#panel-${hostId} .status-dot`);
+    if (dot) dot.className = `status-dot status-dot--${m.status}`;
+
+    const hostObj = hosts.find(h => h.id === hostId);
+    if (hostObj) hostObj._status = m.status;
+    updateSidebarDot(hostId, m.status);
+  }
+
+  renderPanelChart(hostId, measurements);
+}
+
+function renderPanelChart(hostId, measurements) {
+  const canvas = document.getElementById(`chart-${hostId}`);
+  if (!canvas) return;
+
+  const pts = [...measurements].reverse();
+  const labels = pts.map(m =>
+    new Date(m.timestamp + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  );
+  const data = pts.map(m => m.latency_ms);
+
+  if (hostCharts[hostId]) {
+    hostCharts[hostId].data.labels = labels;
+    hostCharts[hostId].data.datasets[0].data = data;
+    hostCharts[hostId].update('none');
+    return;
+  }
+
+  hostCharts[hostId] = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59,130,246,0.08)',
+        borderWidth: 2,
+        pointRadius: 2,
+        tension: 0.3,
+        fill: true,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: '#94a3b8', maxTicksLimit: 6, font: { size: 10 } },
+          grid: { color: '#2a2d3a' },
+        },
+        y: {
+          ticks: { color: '#94a3b8', callback: v => `${v}ms`, font: { size: 10 } },
+          grid: { color: '#2a2d3a' },
+          beginAtZero: true,
+        },
+      },
+    },
+  });
+}
+
+async function pingInPanel(hostId) {
+  const btn = document.getElementById(`panelPing-${hostId}`);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const res = await fetch(`${API}/hosts/${hostId}/ping`, { method: 'POST' });
+    if (!res.ok) throw new Error();
+    await loadPanelData(hostId);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Ping'; }
+  }
+}
+
+function openDetail(hostId) {
+  stopRefresh();
+  destroyHostCharts();
+  selectHost(hostId);
+}
+
+// ── Detail ────────────────────────────────────────────────────────────────────
 async function selectHost(id) {
+  viewMode = 'detail';
   selectedHostId = id;
   renderSidebar();
   const host = hosts.find(h => h.id === id);
   if (!host) return;
 
-  emptyState.style.display = "none";
-  if (latencyChart) { latencyChart.destroy(); latencyChart = null; }
-
+  destroyDetailChart();
   renderDetailShell(host);
 
   const measurements = await fetch(`${API}/hosts/${id}/measurements`)
@@ -95,7 +304,6 @@ async function selectHost(id) {
   if (measurements.length > 0) updateStats(measurements[0]);
   renderChart(measurements);
 
-  // port check runs in background — fast enough to not need a spinner
   fetch(`${API}/hosts/${id}/ports`)
     .then(r => r.json())
     .then(renderPorts)
@@ -108,10 +316,14 @@ async function selectHost(id) {
 function renderDetailShell(host) {
   mainPanel.innerHTML = `
     <div class="host-detail">
+      <div class="detail-nav">
+        <button class="btn btn--sm" id="backBtn">← Overview</button>
+      </div>
+
       <div class="host-header">
         <div class="host-title">
-          <h2>${host.label || host.address}</h2>
-          ${host.label ? `<span class="host-addr">${host.address}</span>` : ""}
+          <h2>${escapeHtml(host.label || host.address)}</h2>
+          ${host.label ? `<span class="host-addr">${escapeHtml(host.address)}</span>` : ""}
         </div>
         <div class="host-actions">
           <button class="btn btn--primary" id="pingBtn">Ping</button>
@@ -154,6 +366,10 @@ function renderDetailShell(host) {
     </div>
   `;
 
+  document.getElementById("backBtn").addEventListener("click", () => {
+    destroyDetailChart();
+    renderOverview();
+  });
   document.getElementById("pingBtn").addEventListener("click", () => runPing(host.id));
   document.getElementById("deleteBtn").addEventListener("click", () => deleteHost(host.id));
   document.getElementById("traceBtn").addEventListener("click", () => runTraceroute(host.id));
@@ -176,12 +392,11 @@ function renderChart(measurements) {
   if (!canvas) return;
 
   const pts = [...measurements].reverse();
-  const labels = pts.map(m => {
-    const d = new Date(m.timestamp + "Z");
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  });
+  const labels = pts.map(m =>
+    new Date(m.timestamp + "Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  );
 
-  latencyChart = new Chart(canvas, {
+  detailChart = new Chart(canvas, {
     type: "line",
     data: {
       labels,
@@ -226,15 +441,14 @@ async function runPing(hostId) {
 
     updateStats(m);
 
-    if (latencyChart) {
-      const d = new Date(m.timestamp + "Z");
-      latencyChart.data.labels.push(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-      latencyChart.data.datasets[0].data.push(m.latency_ms);
-      latencyChart.update();
+    if (detailChart) {
+      detailChart.data.labels.push(new Date(m.timestamp + "Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      detailChart.data.datasets[0].data.push(m.latency_ms);
+      detailChart.update();
     }
 
     const host = hosts.find(h => h.id === hostId);
-    if (host) { host._status = m.status; renderSidebar(); }
+    if (host) { host._status = m.status; updateSidebarDot(hostId, m.status); }
   } finally {
     btn.disabled = false;
     btn.textContent = "Ping";
@@ -299,13 +513,26 @@ async function deleteHost(hostId) {
   try {
     await fetch(`${API}/hosts/${hostId}`, { method: "DELETE" });
     selectedHostId = null;
-    if (latencyChart) { latencyChart.destroy(); latencyChart = null; }
-    mainPanel.innerHTML = "";
-    emptyState.style.display = "";
+    viewMode = 'overview';
+    destroyDetailChart();
     await loadHosts();
   } catch {
     alert("Failed to remove host.");
   }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function stopRefresh() {
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+}
+
+function destroyDetailChart() {
+  if (detailChart) { detailChart.destroy(); detailChart = null; }
+}
+
+function destroyHostCharts() {
+  Object.values(hostCharts).forEach(c => c.destroy());
+  hostCharts = {};
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
