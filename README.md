@@ -4,7 +4,9 @@ Real-time monitoring of network availability and performance for arbitrary hosts
 The backend continuously pings hosts, runs traceroutes, and checks port availability.
 Results stream live to the browser via WebSockets and are persisted in SQLite.
 
-![Screenshot example](https://github.com/rastr-0/INTA/blob/main/Example.png)
+![Overview example](https://github.com/rastr-0/INTA/blob/main/Example_2.png)
+
+![Host details example](https://github.com/rastr-0/INTA/blob/main/Example.png)
 
 ## Tech stack
 
